@@ -1,0 +1,29 @@
+# .github/workflows/sprint_demo.yml
+name: Sprint Demo Automation
+on:
+  schedule:
+    - cron: '0 3 * * 4'   # Every Thursday 8:30 AM IST (3:00 UTC)
+  workflow_dispatch:      # Manual trigger via Jira / Teams button
+    inputs:
+      triggered_by:
+        description: 'Who triggered this'
+        default: 'manual'
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r requirements.txt
+      - name: Run sprint demo pipeline
+        env:
+          JIRA_URL:     ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL:   ${{ secrets.JIRA_EMAIL }}
+          JIRA_TOKEN:   ${{ secrets.JIRA_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CONFLUENCE_TOKEN:  ${{ secrets.CONFLUENCE_TOKEN }}
+          GDRIVE_CREDS: ${{ secrets.GDRIVE_CREDENTIALS_JSON }}
+          TEAMS_WEBHOOK: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: python pipeline/main.py
