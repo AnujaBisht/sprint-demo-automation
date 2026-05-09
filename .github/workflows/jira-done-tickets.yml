@@ -1,0 +1,34 @@
+name: Weekly Jira Done Tickets
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'   # Every Monday 9 AM UTC
+  workflow_dispatch:
+
+jobs:
+  fetch-jira-done:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Fetch active sprint
+        id: sprint
+        run: |
+          response=$(curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+          -H "Accept: application/json" \
+          "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/board/${{ secrets.JIRA_BOARD_ID }}/sprint?state=active")
+
+          sprint_id=$(echo "$response" | jq '.values[0].id')
+
+          echo "SPRINT_ID=$sprint_id" >> $GITHUB_ENV
+
+      - name: Fetch DONE tickets
+        run: |
+          curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+          -H "Accept: application/json" \
+          --get \
+          --data-urlencode 'jql=status=Done' \
+          "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/sprint/${SPRINT_ID}/issue" \
+          | jq '.issues[] | {key: .key, summary: .fields.summary}'
