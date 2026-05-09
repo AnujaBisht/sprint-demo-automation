@@ -75,3 +75,11 @@ jobs:
           "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/sprint/${SPRINT_ID}/issue")
 
           echo "$response" | jq '.issues[] | {key: .key, summary: .fields.summary}'
+
+          - name: Setup Node
+  uses: actions/setup-node@v4
+  with:
+    node-version: 20
+
+- name: Install dependencies
+  run: npm install openai fs
