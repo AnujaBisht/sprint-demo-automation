@@ -16,31 +16,13 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Check secrets
+      - name: Validate secrets
         run: |
-          echo "Checking secrets..."
-
-          if [ -z "${{ secrets.JIRA_BASE_URL }}" ]; then
-            echo "JIRA_BASE_URL missing"
-            exit 1
-          fi
-
-          if [ -z "${{ secrets.JIRA_EMAIL }}" ]; then
-            echo "JIRA_EMAIL missing"
-            exit 1
-          fi
-
-          if [ -z "${{ secrets.JIRA_API_TOKEN }}" ]; then
-            echo "JIRA_API_TOKEN missing"
-            exit 1
-          fi
-
-          if [ -z "${{ secrets.JIRA_BOARD_ID }}" ]; then
-            echo "JIRA_BOARD_ID missing"
-            exit 1
-          fi
-
-          echo "All secrets exist"
+          if [ -z "${{ secrets.JIRA_BASE_URL }}" ]; then exit 1; fi
+          if [ -z "${{ secrets.JIRA_EMAIL }}" ]; then exit 1; fi
+          if [ -z "${{ secrets.JIRA_API_TOKEN }}" ]; then exit 1; fi
+          if [ -z "${{ secrets.JIRA_BOARD_ID }}" ]; then exit 1; fi
+          echo "Secrets OK"
 
       - name: Fetch active sprint
         run: |
@@ -52,8 +34,8 @@ jobs:
 
           sprint_id=$(echo "$response" | jq -r '.values[0].id')
 
-          if [ "$sprint_id" = "null" ] || [ -z "$sprint_id" ]; then
-            echo "No active sprint found"
+          if [ -z "$sprint_id" ] || [ "$sprint_id" = "null" ]; then
+            echo "No active sprint"
             exit 1
           fi
 
@@ -67,7 +49,12 @@ jobs:
           --data-urlencode 'jql=status=Done' \
           "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/sprint/${SPRINT_ID}/issue")
 
-          echo "$response" | jq '.issues[] | {key: .key, summary: .fields.summary}'
+          echo "$response" > tickets.json
+
+      - name: Verify tickets file
+        run: |
+          ls -la
+          cat tickets.json
 
       - name: Setup Node
         uses: actions/setup-node@v4
