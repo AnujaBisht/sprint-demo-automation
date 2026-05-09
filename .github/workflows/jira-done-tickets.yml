@@ -1,34 +1,77 @@
 name: Weekly Jira Done Tickets
 
 on:
-  schedule:
-    - cron: '0 9 * * 1'   # Every Monday 9 AM UTC
   workflow_dispatch:
+  schedule:
+    - cron: '30 3 * * 1'
 
 jobs:
   fetch-jira-done:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch active sprint
-        id: sprint
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Verify secrets
         run: |
+          echo "Checking secrets..."
+
+          if [ -z "${{ secrets.JIRA_BASE_URL }}" ]; then
+            echo "JIRA_BASE_URL missing"
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.JIRA_EMAIL }}" ]; then
+            echo "JIRA_EMAIL missing"
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.JIRA_API_TOKEN }}" ]; then
+            echo "JIRA_API_TOKEN missing"
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.JIRA_BOARD_ID }}" ]; then
+            echo "JIRA_BOARD_ID missing"
+            exit 1
+          fi
+
+          echo "All secrets exist"
+
+      - name: Fetch active sprint
+        run: |
+          echo "Fetching active sprint..."
+
           response=$(curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
           -H "Accept: application/json" \
           "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/board/${{ secrets.JIRA_BOARD_ID }}/sprint?state=active")
 
-          sprint_id=$(echo "$response" | jq '.values[0].id')
+          echo "API Response:"
+          echo "$response"
+
+          sprint_id=$(echo "$response" | jq -r '.values[0].id')
+
+          echo "Sprint ID: $sprint_id"
+
+          if [ "$sprint_id" = "null" ] || [ -z "$sprint_id" ]; then
+            echo "No active sprint found"
+            exit 1
+          fi
 
           echo "SPRINT_ID=$sprint_id" >> $GITHUB_ENV
 
       - name: Fetch DONE tickets
         run: |
-          curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+          echo "Fetching Done tickets..."
+
+          response=$(curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
           -H "Accept: application/json" \
           --get \
           --data-urlencode 'jql=status=Done' \
-          "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/sprint/${SPRINT_ID}/issue" \
-          | jq '.issues[] | {key: .key, summary: .fields.summary}'
+          "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/sprint/${SPRINT_ID}/issue")
+
+          echo "$response" | jq '.issues[] | {key: .key, summary: .fields.summary}'
