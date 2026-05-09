@@ -11,7 +11,12 @@ let output = "";
 
 for (const issue of data.issues) {
   const prompt = `
+You are a senior software engineer.
+
 Summarize this Jira ticket in 2-3 lines:
+- What was the issue
+- What was fixed
+- Impact
 
 Key: ${issue.key}
 Summary: ${issue.fields.summary}
@@ -29,3 +34,4 @@ Description: ${issue.fields.description || "No description"}
 }
 
 fs.writeFileSync("summary.md", output);
+console.log("Summary generated");
