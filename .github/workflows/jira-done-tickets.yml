@@ -16,7 +16,7 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Jira url
+      - name: Check secrets
         run: |
           echo "Checking secrets..."
 
@@ -44,18 +44,13 @@ jobs:
 
       - name: Fetch active sprint
         run: |
-          echo "Fetching active sprint..."
-
           response=$(curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
           -H "Accept: application/json" \
           "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/board/${{ secrets.JIRA_BOARD_ID }}/sprint?state=active")
 
-          echo "API Response:"
           echo "$response"
 
           sprint_id=$(echo "$response" | jq -r '.values[0].id')
-
-          echo "Sprint ID: $sprint_id"
 
           if [ "$sprint_id" = "null" ] || [ -z "$sprint_id" ]; then
             echo "No active sprint found"
@@ -66,8 +61,6 @@ jobs:
 
       - name: Fetch DONE tickets
         run: |
-          echo "Fetching Done tickets..."
-
           response=$(curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
           -H "Accept: application/json" \
           --get \
@@ -76,10 +69,15 @@ jobs:
 
           echo "$response" | jq '.issues[] | {key: .key, summary: .fields.summary}'
 
-          - name: Setup Node
-  uses: actions/setup-node@v4
-  with:
-    node-version: 20
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-- name: Install dependencies
-  run: npm install openai fs
+      - name: Install dependencies
+        run: npm install openai
+
+      - name: Generate AI summaries
+        run: node generate-summary.js
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
