@@ -62,7 +62,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install openai
+        run: npm install @google/generative-ai
 
       - name: Generate AI summaries
         run: node generate-summary.js
