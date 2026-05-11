@@ -3,7 +3,7 @@ name: Weekly Jira Tickets to Confluence
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 3 * * 1'
+    - cron: '30 3 * * 1'   # Every Monday 9 AM IST
 
 jobs:
   fetch-and-summarize:
@@ -48,79 +48,13 @@ jobs:
           echo "SPRINT_ID=$sprint_id"     >> $GITHUB_ENV
           echo "SPRINT_NAME=$sprint_name" >> $GITHUB_ENV
 
-      # ── DEBUG STEP — shows exact Jira API error ───────────────────────
-      # This step prints the raw Jira response so we can see the real error.
-      # Remove this step once tickets are fetching correctly.
-      - name: DEBUG — raw Jira API responses
-        run: |
-          echo "======================================================"
-          echo "TEST 1: Simple search with no filters (should return all issues)"
-          echo "======================================================"
-          curl -s \
-            -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
-            -H "Accept: application/json" \
-            "${{ secrets.JIRA_BASE_URL }}/rest/api/3/search?jql=project%3DSCRUM&maxResults=5" \
-            | jq '{total: .total, error: .errorMessages, issues: [.issues[]?.key]}'
-
-          echo ""
-          echo "======================================================"
-          echo "TEST 2: Sprint filter — sprint=2"
-          echo "======================================================"
-          curl -s \
-            -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
-            -H "Accept: application/json" \
-            "${{ secrets.JIRA_BASE_URL }}/rest/api/3/search?jql=sprint%3D${SPRINT_ID}&maxResults=5" \
-            | jq '{total: .total, error: .errorMessages, issues: [.issues[]?.key]}'
-
-          echo ""
-          echo "======================================================"
-          echo "TEST 3: Sprint + Done status"
-          echo "======================================================"
-          curl -s \
-            -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
-            -H "Accept: application/json" \
-            -G \
-            --data-urlencode "jql=sprint=${SPRINT_ID} AND status=Done" \
-            --data-urlencode "maxResults=10" \
-            "${{ secrets.JIRA_BASE_URL }}/rest/api/3/search" \
-            | jq '{total: .total, error: .errorMessages, issues: [.issues[]?.key]}'
-
-          echo ""
-          echo "======================================================"
-          echo "TEST 4: Sprint + In Review status"
-          echo "======================================================"
-          curl -s \
-            -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
-            -H "Accept: application/json" \
-            -G \
-            --data-urlencode "jql=sprint=${SPRINT_ID} AND status=\"In Review\"" \
-            --data-urlencode "maxResults=10" \
-            "${{ secrets.JIRA_BASE_URL }}/rest/api/3/search" \
-            | jq '{total: .total, error: .errorMessages, issues: [.issues[]?.key]}'
-
-          echo ""
-          echo "======================================================"
-          echo "TEST 5: Check your actual Jira BASE URL format"
-          echo "======================================================"
-          echo "JIRA_BASE_URL starts with: $(echo '${{ secrets.JIRA_BASE_URL }}' | cut -c1-8)..."
-          echo "(Should be: https://)"
-
-          echo ""
-          echo "======================================================"
-          echo "TEST 6: Agile sprint issues endpoint (alternative approach)"
-          echo "======================================================"
-          curl -s \
-            -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
-            -H "Accept: application/json" \
-            "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/sprint/${SPRINT_ID}/issue?maxResults=5" \
-            | jq '{total: .total, error: .errorMessages, issues: [.issues[]?.key]}'
-
       # ── STEP 2: Fetch IN REVIEW tickets ─────────────────────────────────
+      # FIX: Use /rest/agile/1.0/sprint/{id}/issue with JQL filter
+      # /rest/api/3/search has been removed by Atlassian — use /search/jql or agile endpoint
       - name: Fetch IN REVIEW tickets
         run: |
           echo "Fetching In Review tickets for sprint ${SPRINT_ID}..."
 
-          # Try agile endpoint first (more reliable for sprint-scoped queries)
           response=$(curl -s \
             -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
             -H "Accept: application/json" \
@@ -129,21 +63,6 @@ jobs:
             --data-urlencode "fields=key,summary,description,status,assignee,issuetype,customfield_10016" \
             --data-urlencode "maxResults=50" \
             "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/sprint/${SPRINT_ID}/issue")
-
-          # Check if response has an error
-          error=$(echo "$response" | jq -r '.errorMessages[0] // empty')
-          if [ -n "$error" ]; then
-            echo "⚠ Agile endpoint error: $error"
-            echo "  Falling back to /rest/api/3/search..."
-
-            response=$(curl -s \
-              -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
-              -H "Accept: application/json" \
-              -G \
-              --data-urlencode "jql=sprint=${SPRINT_ID} AND status=\"In Review\"" \
-              --data-urlencode "maxResults=50" \
-              "${{ secrets.JIRA_BASE_URL }}/rest/api/3/search")
-          fi
 
           echo "$response" > in_review_tickets.json
           count=$(echo "$response" | jq '.issues | length // 0')
@@ -164,26 +83,12 @@ jobs:
             --data-urlencode "maxResults=50" \
             "${{ secrets.JIRA_BASE_URL }}/rest/agile/1.0/sprint/${SPRINT_ID}/issue")
 
-          error=$(echo "$response" | jq -r '.errorMessages[0] // empty')
-          if [ -n "$error" ]; then
-            echo "⚠ Agile endpoint error: $error"
-            echo "  Falling back to /rest/api/3/search..."
-
-            response=$(curl -s \
-              -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
-              -H "Accept: application/json" \
-              -G \
-              --data-urlencode "jql=sprint=${SPRINT_ID} AND status=Done" \
-              --data-urlencode "maxResults=50" \
-              "${{ secrets.JIRA_BASE_URL }}/rest/api/3/search")
-          fi
-
           echo "$response" > done_tickets.json
           count=$(echo "$response" | jq '.issues | length // 0')
           echo "✓ DONE Tickets found: $count"
           echo "$response" | jq -r '.issues[]? | "  - \(.key): \(.fields.summary)"' || true
 
-      # ── STEP 4: Setup Node + install deps ───────────────────────────────
+      # ── STEP 4: Setup Node ───────────────────────────────────────────────
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -193,20 +98,24 @@ jobs:
         run: npm install @google/generative-ai
 
       # ── STEP 5: Generate AI summaries ───────────────────────────────────
+      # FIX: File renamed to .cjs so Node treats it as CommonJS (require syntax)
+      # This avoids the "require is not defined in ES module scope" error
+      # caused by "type": "module" in your package.json
       - name: Generate summaries
         run: |
-          cat << 'JSEOF' > generate-summaries.js
+          cat << 'JSEOF' > generate-summaries.cjs
           const { GoogleGenerativeAI } = require("@google/generative-ai");
           const fs = require("fs");
 
-          const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+          const genAI     = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
           const sprintName = process.env.SPRINT_NAME || "Sprint";
 
+          // Extract plain text from Jira ADF (nested JSON) description field
           function extractText(desc) {
             if (!desc) return "No description provided.";
             const texts = [];
-            for (const block of desc.content || []) {
-              for (const inline of block.content || []) {
+            for (const block of (desc.content || [])) {
+              for (const inline of (block.content || [])) {
                 if (inline.type === "text") texts.push(inline.text || "");
               }
             }
@@ -217,55 +126,81 @@ jobs:
             if (!tickets || tickets.length === 0) {
               return `No ${statusLabel} tickets this sprint.`;
             }
+
             const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
             const lines = [];
+
             for (const issue of tickets) {
-              const f       = issue.fields;
-              const key     = issue.key;
-              const summary = f.summary || "";
-              const desc    = extractText(f.description);
-              const assignee= f.assignee ? f.assignee.displayName : "Unassigned";
-              const points  = f.customfield_10016 || "—";
-              const type    = f.issuetype ? f.issuetype.name : "Task";
+              const f        = issue.fields;
+              const key      = issue.key;
+              const summary  = f.summary  || "";
+              const desc     = extractText(f.description);
+              const assignee = f.assignee ? f.assignee.displayName : "Unassigned";
+              const points   = f.customfield_10016 || "—";
+              const type     = f.issuetype ? f.issuetype.name : "Task";
 
               console.log(`  Summarising ${key}: ${summary.substring(0, 50)}...`);
 
-              const prompt = `Summarise this Jira ticket in 2-3 sentences for a sprint demo.
-          Focus on what was done and the value delivered.
+              const prompt = `You are a scrum master writing a sprint demo summary.
+          Summarise this Jira ticket in 2-3 clear sentences for a stakeholder demo.
+          Focus on what was done and the business value delivered.
+
           Ticket: ${key} — ${summary}
-          Type: ${type} | Points: ${points} | Assignee: ${assignee}
+          Type: ${type} | Story Points: ${points} | Assignee: ${assignee}
           Description: ${desc}
-          Return only the summary, no bullet points or headers.`;
+
+          Return only the summary text. No bullet points, no headers, no markdown.`;
 
               try {
                 const result = await model.generateContent(prompt);
-                lines.push(`${key} (${assignee}, ${points} pts): ${result.response.text().trim()}`);
-              } catch (e) {
-                console.error(`  Error on ${key}: ${e.message}`);
-                lines.push(`${key}: ${summary} (summary unavailable)`);
+                const text   = result.response.text().trim();
+                lines.push(`${key} (${assignee}, ${points} pts):\n${text}`);
+              } catch (err) {
+                console.error(`  ⚠ Error summarising ${key}: ${err.message}`);
+                lines.push(`${key} (${assignee}): ${summary}`);
               }
-              await new Promise(r => setTimeout(r, 500));
+
+              // Small delay to respect Gemini rate limits
+              await new Promise(r => setTimeout(r, 600));
             }
+
             return lines.join("\n\n");
           }
 
           async function main() {
+            console.log(`\nGenerating summaries for: ${sprintName}`);
+
             const inReviewData = JSON.parse(fs.readFileSync("in_review_tickets.json", "utf8"));
-            const doneData     = JSON.parse(fs.readFileSync("done_tickets.json",     "utf8"));
-            const inReview     = inReviewData.issues || [];
-            const done         = doneData.issues     || [];
-            console.log(`Summarising: ${inReview.length} In Review, ${done.length} Done`);
-            const irSummary   = await summariseTickets(inReview, "In Review");
-            const doneSummary = await summariseTickets(done,     "Done");
-            fs.writeFileSync("in_review_summary.txt", irSummary);
+            const doneData     = JSON.parse(fs.readFileSync("done_tickets.json",      "utf8"));
+
+            const inReview = inReviewData.issues || [];
+            const done     = doneData.issues     || [];
+
+            console.log(`Found: ${inReview.length} In Review, ${done.length} Done\n`);
+
+            console.log("Summarising In Review tickets...");
+            const inReviewSummary = await summariseTickets(inReview, "In Review");
+
+            console.log("\nSummarising Done tickets...");
+            const doneSummary = await summariseTickets(done, "Done");
+
+            fs.writeFileSync("in_review_summary.txt", inReviewSummary);
             fs.writeFileSync("done_summary.txt",      doneSummary);
-            console.log("✓ Summaries written.");
+
+            console.log("\n✓ Summaries written to in_review_summary.txt and done_summary.txt");
+            console.log("\n--- In Review Preview ---");
+            console.log(inReviewSummary.substring(0, 200));
+            console.log("\n--- Done Preview ---");
+            console.log(doneSummary.substring(0, 200));
           }
 
-          main().catch(e => { console.error(e); process.exit(1); });
+          main().catch(err => {
+            console.error("Fatal error:", err);
+            process.exit(1);
+          });
           JSEOF
 
-          node generate-summaries.js
+          node generate-summaries.cjs
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SPRINT_NAME: ${{ env.SPRINT_NAME }}
@@ -278,48 +213,81 @@ jobs:
           CURRENT_DATE=$(date '+%Y-%m-%d')
           PAGE_TITLE="Sprint Summary - ${SPRINT_NAME} - ${CURRENT_DATE}"
 
-          # Look up numeric space ID from space key
+          echo "Page title: $PAGE_TITLE"
+
+          # ── Look up numeric space ID from space key ──────────────────
           SPACE_RESP=$(curl -s \
             -u "${{ secrets.CONFLUENCE_EMAIL }}:${{ secrets.CONFLUENCE_API_TOKEN }}" \
             -H "Accept: application/json" \
             "${{ secrets.CONFLUENCE_BASE_URL }}/wiki/api/v2/spaces?keys=${{ secrets.CONFLUENCE_SPACE_KEY }}")
 
           SPACE_ID=$(echo "$SPACE_RESP" | jq -r '.results[0].id // empty')
+
           if [ -z "$SPACE_ID" ]; then
-            echo "✗ Could not find Confluence space. Response:"
-            echo "$SPACE_RESP" | jq '.'
+            echo "✗ Could not resolve space key '${{ secrets.CONFLUENCE_SPACE_KEY }}' to a space ID"
+            echo "Response: $SPACE_RESP"
             exit 1
           fi
-          echo "✓ Space ID: $SPACE_ID"
+          echo "✓ Confluence Space ID: $SPACE_ID"
 
-          # Safely escape values for JSON
-          IR_ESC=$(echo "$IN_REVIEW_SUMMARY" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
-          DN_ESC=$(echo "$DONE_SUMMARY"      | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
-          TL_ESC=$(echo "$PAGE_TITLE"        | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+          # ── Build ADF body safely using Python ───────────────────────
+          # Python handles all JSON escaping — no shell quoting issues
+          BODY=$(python3 - << PYEOF
+          import json, sys, os
 
-          BODY=$(python3 - <<PYEOF
-          import json
-          ir = $IR_ESC
-          dn = $DN_ESC
-          ti = $TL_ESC
-          dt = "$CURRENT_DATE"
+          ir   = """${IN_REVIEW_SUMMARY}"""
+          done = """${DONE_SUMMARY}"""
+          ti   = "${PAGE_TITLE}"
+          dt   = "${CURRENT_DATE}"
+
           doc = {
-            "type": "doc", "version": 1,
+            "type": "doc",
+            "version": 1,
             "content": [
-              {"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":ti}]},
-              {"type":"paragraph","content":[{"type":"text","text":f"Auto-generated by GitHub Actions on {dt}.","marks":[{"type":"em"}]}]},
-              {"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"📋 In Review Tickets"}]},
-              {"type":"paragraph","content":[{"type":"text","text": ir if ir else "No In Review tickets."}]},
-              {"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"✅ Completed (Done) Tickets"}]},
-              {"type":"paragraph","content":[{"type":"text","text": dn if dn else "No Done tickets."}]}
+              {
+                "type": "heading",
+                "attrs": {"level": 1},
+                "content": [{"type": "text", "text": ti}]
+              },
+              {
+                "type": "paragraph",
+                "content": [{
+                  "type": "text",
+                  "text": f"Auto-generated by GitHub Actions · Sprint: {ti} · Date: {dt}",
+                  "marks": [{"type": "em"}]
+                }]
+              },
+              {
+                "type": "heading",
+                "attrs": {"level": 2},
+                "content": [{"type": "text", "text": "📋 In Review Tickets"}]
+              },
+              {
+                "type": "paragraph",
+                "content": [{"type": "text", "text": ir if ir.strip() else "No In Review tickets this sprint."}]
+              },
+              {
+                "type": "heading",
+                "attrs": {"level": 2},
+                "content": [{"type": "text", "text": "✅ Completed (Done) Tickets"}]
+              },
+              {
+                "type": "paragraph",
+                "content": [{"type": "text", "text": done if done.strip() else "No Done tickets this sprint."}]
+              }
             ]
           }
           print(json.dumps(doc))
           PYEOF
           )
 
-          # Check if page already exists
-          TITLE_ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$PAGE_TITLE")
+          echo "✓ ADF body built"
+
+          # ── Check if page already exists ─────────────────────────────
+          TITLE_ENCODED=$(python3 -c \
+            "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" \
+            "$PAGE_TITLE")
+
           PAGE_RESP=$(curl -s \
             -u "${{ secrets.CONFLUENCE_EMAIL }}:${{ secrets.CONFLUENCE_API_TOKEN }}" \
             -H "Accept: application/json" \
@@ -327,20 +295,25 @@ jobs:
 
           PAGE_ID=$(echo "$PAGE_RESP" | jq -r '.results[0].id // empty')
 
-          PAYLOAD=$(python3 -c "
+          # ── Build the final JSON payload with Python ─────────────────
+          if [ -z "$PAGE_ID" ]; then
+            echo "Creating new Confluence page..."
+
+            PAYLOAD=$(python3 -c "
           import json, sys
-          body = json.loads(sys.argv[1])
-          title = sys.argv[2]
-          space_id = sys.argv[3]
+          body    = json.loads(sys.argv[1])
+          title   = sys.argv[2]
+          space_id= sys.argv[3]
           print(json.dumps({
             'spaceId': space_id,
-            'title': title,
-            'body': {'representation': 'atlas_doc_format', 'value': json.dumps(body)}
+            'title':   title,
+            'body': {
+              'representation': 'atlas_doc_format',
+              'value': json.dumps(body)
+            }
           }))
           " "$BODY" "$PAGE_TITLE" "$SPACE_ID")
 
-          if [ -z "$PAGE_ID" ]; then
-            echo "Creating new page: $PAGE_TITLE"
             RESP=$(curl -s -X POST \
               -u "${{ secrets.CONFLUENCE_EMAIL }}:${{ secrets.CONFLUENCE_API_TOKEN }}" \
               -H "Content-Type: application/json" \
@@ -350,25 +323,30 @@ jobs:
 
             NEW_ID=$(echo "$RESP" | jq -r '.id // empty')
             if [ -z "$NEW_ID" ]; then
-              echo "✗ Create failed:"; echo "$RESP" | jq '.'; exit 1
+              echo "✗ Page creation failed. Response:"; echo "$RESP" | jq '.'; exit 1
             fi
             echo "✓ Page created! ID: $NEW_ID"
+            echo "  View: ${{ secrets.CONFLUENCE_BASE_URL }}/wiki/spaces/${{ secrets.CONFLUENCE_SPACE_KEY }}/pages/$NEW_ID"
+
           else
             echo "Updating existing page ID: $PAGE_ID"
-            VER=$(echo "$PAGE_RESP" | jq -r '.results[0].version.number')
-            NEW_VER=$((VER + 1))
+            CURRENT_VER=$(echo "$PAGE_RESP" | jq -r '.results[0].version.number')
+            NEW_VER=$((CURRENT_VER + 1))
 
-            UPDATE_PAYLOAD=$(python3 -c "
+            PAYLOAD=$(python3 -c "
           import json, sys
-          body = json.loads(sys.argv[1])
-          title = sys.argv[2]
+          body    = json.loads(sys.argv[1])
+          title   = sys.argv[2]
           page_id = sys.argv[3]
-          ver = int(sys.argv[4])
+          ver     = int(sys.argv[4])
           print(json.dumps({
-            'id': page_id,
+            'id':      page_id,
             'version': {'number': ver},
-            'title': title,
-            'body': {'representation': 'atlas_doc_format', 'value': json.dumps(body)}
+            'title':   title,
+            'body': {
+              'representation': 'atlas_doc_format',
+              'value': json.dumps(body)
+            }
           }))
           " "$BODY" "$PAGE_TITLE" "$PAGE_ID" "$NEW_VER")
 
@@ -376,20 +354,22 @@ jobs:
               -u "${{ secrets.CONFLUENCE_EMAIL }}:${{ secrets.CONFLUENCE_API_TOKEN }}" \
               -H "Content-Type: application/json" \
               -H "Accept: application/json" \
-              -d "$UPDATE_PAYLOAD" \
+              -d "$PAYLOAD" \
               "${{ secrets.CONFLUENCE_BASE_URL }}/wiki/api/v2/pages/${PAGE_ID}")
 
             UPD_ID=$(echo "$RESP" | jq -r '.id // empty')
             if [ -z "$UPD_ID" ]; then
-              echo "✗ Update failed:"; echo "$RESP" | jq '.'; exit 1
+              echo "✗ Page update failed. Response:"; echo "$RESP" | jq '.'; exit 1
             fi
             echo "✓ Page updated to version $NEW_VER"
+            echo "  View: ${{ secrets.CONFLUENCE_BASE_URL }}/wiki/spaces/${{ secrets.CONFLUENCE_SPACE_KEY }}/pages/$PAGE_ID"
           fi
 
+      # ── Cleanup ──────────────────────────────────────────────────────────
       - name: Cleanup
         if: always()
         run: |
           rm -f in_review_tickets.json done_tickets.json \
                 in_review_summary.txt done_summary.txt \
-                generate-summaries.js
+                generate-summaries.cjs
           echo "✓ Cleanup done"
