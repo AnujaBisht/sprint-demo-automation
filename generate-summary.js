@@ -1,8 +1,10 @@
 import fs from "fs";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+const model = genAI.getGenerativeModel({
+  model: "gemini-1.5-flash",
 });
 
 const data = JSON.parse(fs.readFileSync("tickets.json", "utf8"));
@@ -23,15 +25,19 @@ Summary: ${issue.fields.summary}
 Description: ${issue.fields.description || "No description"}
 `;
 
-  const res = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-  });
+  try {
+    const result = await model.generateContent(prompt);
 
-  const summary = res.choices[0].message.content;
+    const summary = result.response.text();
 
-  output += `\n## ${issue.key}\n${summary}\n`;
+    output += `\n## ${issue.key}\n${summary}\n`;
+
+    console.log(`Processed ${issue.key}`);
+  } catch (err) {
+    console.error(`Failed for ${issue.key}:`, err.message);
+  }
 }
 
 fs.writeFileSync("summary.md", output);
+
 console.log("Summary generated");
