@@ -54,19 +54,21 @@ jobs:
           response=$(curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
           -H "Accept: application/json" \
           --get \
-          --data-urlencode 'jql=sprint=${{ env.SPRINT_ID }} AND status="In Review"' \
+          --data-urlencode "jql=sprint=${{ secrets.SPRINT_ID }} AND status="In Review"" \
           "${{ secrets.JIRA_BASE_URL }}/rest/api/3/search?fields=key,summary,description,status,assignee")
 
           echo "$response" > in_review_tickets.json
           echo "IN REVIEW Tickets:"
           jq '.issues | length' in_review_tickets.json
 
+          
+
       - name: Fetch DONE tickets
         run: |
           response=$(curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
           -H "Accept: application/json" \
           --get \
-          --data-urlencode 'jql=sprint=${{ env.SPRINT_ID }} AND status=Done' \
+          --data-urlencode "jql=sprint=${{ secrets.SPRINT_ID }} AND status=Done" \
           "${{ secrets.JIRA_BASE_URL }}/rest/api/3/search?fields=key,summary,description,status,assignee")
 
           echo "$response" > done_tickets.json
